@@ -1,0 +1,11 @@
+name: Check Untagged Go Dependencies
+description: Check for updates to pseudo-versioned (commit-pinned) Go dependencies that Dependabot cannot update
+author: horgh
+
+branding:
+  icon: package
+  color: orange
+
+runs:
+  using: docker
+  image: Dockerfile
