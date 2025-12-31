@@ -10,7 +10,9 @@ RUN CGO_ENABLED=0 go build -o /check-untagged-go-deps .
 # Runtime stage
 FROM golang:1.25-alpine
 
-# The tool needs 'go' command to query module versions
+# git is required for 'go list' to query module versions from repositories
+RUN apk add --no-cache git
+
 COPY --from=builder /check-untagged-go-deps /check-untagged-go-deps
 
 # GitHub Actions mounts the workspace at /github/workspace

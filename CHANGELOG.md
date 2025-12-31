@@ -1,5 +1,10 @@
 # Changelog
 
+## 1.0.1 (2025-12-31)
+
+* Fix Docker image to include git, which is required for `go list` to query
+  module versions.
+
 ## 1.0.0 (2025-12-31)
 
 * Initial release.
