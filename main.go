@@ -13,6 +13,7 @@ import (
 	"bufio"
 	"context"
 	"encoding/json"
+	"flag"
 	"fmt"
 	"os"
 	"os/exec"
@@ -28,12 +29,15 @@ func main() {
 }
 
 func run() error {
+	includeIndirect := flag.Bool("i", false, "include indirect dependencies")
+	flag.Parse()
+
 	gomodPath := "go.mod"
-	if len(os.Args) > 1 {
-		gomodPath = os.Args[1]
+	if flag.NArg() > 0 {
+		gomodPath = flag.Arg(0)
 	}
 
-	deps, updates, err := checkGoMod(context.Background(), gomodPath)
+	deps, updates, err := checkGoMod(context.Background(), gomodPath, *includeIndirect)
 	if err != nil {
 		return err
 	}
@@ -63,8 +67,12 @@ func run() error {
 
 // checkGoMod finds pseudo-versioned dependencies in the given go.mod file and
 // checks if updates are available for them.
-func checkGoMod(ctx context.Context, gomodPath string) ([]dependency, []update, error) {
-	deps, err := findPseudoVersionedDeps(gomodPath)
+func checkGoMod(
+	ctx context.Context,
+	gomodPath string,
+	includeIndirect bool,
+) ([]dependency, []update, error) {
+	deps, err := findPseudoVersionedDeps(gomodPath, includeIndirect)
 	if err != nil {
 		return nil, nil, fmt.Errorf("reading %s: %w", gomodPath, err)
 	}
@@ -91,9 +99,11 @@ type dependency struct {
 // commit hash, e.g.:
 //   - v0.0.0-20231129151722-fdeea329fbba (no base tag)
 //   - v1.1.1-0.20251215205057-2f3252140e00 (based on existing tag)
-var pseudoVersionRe = regexp.MustCompile(`[0-9]{14}-[a-f0-9]{12}$`)
+//
+// It also matches lines ending with "// indirect".
+var pseudoVersionRe = regexp.MustCompile(`[0-9]{14}-[a-f0-9]{12}(?: // indirect)?$`)
 
-func findPseudoVersionedDeps(gomodPath string) ([]dependency, error) {
+func findPseudoVersionedDeps(gomodPath string, includeIndirect bool) ([]dependency, error) {
 	file, err := os.Open(gomodPath)
 	if err != nil {
 		return nil, err
@@ -105,6 +115,11 @@ func findPseudoVersionedDeps(gomodPath string) ([]dependency, error) {
 	for scanner.Scan() {
 		line := strings.TrimSpace(scanner.Text())
 		if !pseudoVersionRe.MatchString(line) {
+			continue
+		}
+
+		isIndirect := strings.HasSuffix(line, "// indirect")
+		if isIndirect && !includeIndirect {
 			continue
 		}
 

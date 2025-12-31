@@ -30,7 +30,7 @@ require (
 	}
 
 	ctx := t.Context()
-	deps, updates, err := checkGoMod(ctx, gomodPath)
+	deps, updates, err := checkGoMod(ctx, gomodPath, false)
 	if err != nil {
 		t.Fatalf("checkGoMod: %v", err)
 	}
@@ -70,8 +70,7 @@ require (
 }
 
 func TestFindPseudoVersionedDeps(t *testing.T) {
-	// Create a temporary go.mod file
-	content := `module test
+	gomodContent := `module test
 
 go 1.25
 
@@ -85,36 +84,59 @@ require (
 	github.com/example/indirect v0.0.0-20231129151722-abcdef123456 // indirect
 )
 `
-	dir := t.TempDir()
-	gomodPath := filepath.Join(dir, "go.mod")
-	if err := os.WriteFile(gomodPath, []byte(content), 0o644); err != nil {
-		t.Fatalf("writing go.mod: %v", err)
+
+	tests := []struct {
+		name            string
+		includeIndirect bool
+		want            map[string]string
+	}{
+		{
+			name:            "exclude indirect",
+			includeIndirect: false,
+			want: map[string]string{
+				"github.com/maxmind/mmdbwriter": "v1.1.1-0.20251215205057-2f3252140e00",
+				"go4.org/netipx":                "v0.0.0-20231129151722-fdeea329fbba",
+			},
+		},
+		{
+			name:            "include indirect",
+			includeIndirect: true,
+			want: map[string]string{
+				"github.com/maxmind/mmdbwriter": "v1.1.1-0.20251215205057-2f3252140e00",
+				"go4.org/netipx":                "v0.0.0-20231129151722-fdeea329fbba",
+				"github.com/example/indirect":   "v0.0.0-20231129151722-abcdef123456",
+			},
+		},
 	}
 
-	deps, err := findPseudoVersionedDeps(gomodPath)
-	if err != nil {
-		t.Fatalf("findPseudoVersionedDeps: %v", err)
-	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			dir := t.TempDir()
+			gomodPath := filepath.Join(dir, "go.mod")
+			if err := os.WriteFile(gomodPath, []byte(gomodContent), 0o644); err != nil {
+				t.Fatalf("writing go.mod: %v", err)
+			}
 
-	// Should find 2 direct pseudo-versioned deps (not the indirect one)
-	if len(deps) != 2 {
-		t.Errorf("got %d deps, want 2", len(deps))
-	}
+			deps, err := findPseudoVersionedDeps(gomodPath, tt.includeIndirect)
+			if err != nil {
+				t.Fatalf("findPseudoVersionedDeps: %v", err)
+			}
 
-	want := map[string]string{
-		"github.com/maxmind/mmdbwriter": "v1.1.1-0.20251215205057-2f3252140e00",
-		"go4.org/netipx":                "v0.0.0-20231129151722-fdeea329fbba",
-	}
+			if len(deps) != len(tt.want) {
+				t.Errorf("got %d deps, want %d", len(deps), len(tt.want))
+			}
 
-	for _, dep := range deps {
-		expectedVersion, ok := want[dep.module]
-		if !ok {
-			t.Errorf("unexpected module: %s", dep.module)
-			continue
-		}
-		if dep.version != expectedVersion {
-			t.Errorf("module %s: got version %s, want %s", dep.module, dep.version, expectedVersion)
-		}
+			for _, dep := range deps {
+				expectedVersion, ok := tt.want[dep.module]
+				if !ok {
+					t.Errorf("unexpected module: %s", dep.module)
+					continue
+				}
+				if dep.version != expectedVersion {
+					t.Errorf("module %s: got version %s, want %s", dep.module, dep.version, expectedVersion)
+				}
+			}
+		})
 	}
 }
 
@@ -152,7 +174,7 @@ func TestPseudoVersionRe(t *testing.T) {
 		{
 			name:    "go.mod line with indirect dependency",
 			input:   "	github.com/example/module v0.0.0-20231129151722-fdeea329fbba // indirect",
-			matches: false,
+			matches: true, // regex matches, but findPseudoVersionedDeps filters these out by default
 		},
 	}
 

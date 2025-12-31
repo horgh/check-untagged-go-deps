@@ -46,8 +46,13 @@ jobs:
    updates
 4. Exits with code 1 if updates are found, alerting you to update manually
 
-Only direct dependencies are checked. Indirect dependencies (lines ending with
-`// indirect`) are not checked.
+By default, only direct dependencies are checked. Indirect dependencies (lines
+ending with `// indirect`) are not checked unless the `-i` flag is passed.
+
+## Options
+
+- `-i` - Include indirect dependencies (those marked with `// indirect` in
+  go.mod)
 
 ## Example output
 
