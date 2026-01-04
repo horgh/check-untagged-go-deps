@@ -46,7 +46,7 @@ require (
 	}
 
 	// Verify updates are for the expected modules
-	foundModules := make(map[string]bool)
+	foundModules := map[string]bool{}
 	for _, u := range updates {
 		foundModules[u.module] = true
 
@@ -133,7 +133,12 @@ require (
 					continue
 				}
 				if dep.version != expectedVersion {
-					t.Errorf("module %s: got version %s, want %s", dep.module, dep.version, expectedVersion)
+					t.Errorf(
+						"module %s: got version %s, want %s",
+						dep.module,
+						dep.version,
+						expectedVersion,
+					)
 				}
 			}
 		})

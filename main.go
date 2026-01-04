@@ -13,22 +13,28 @@ import (
 	"bufio"
 	"context"
 	"encoding/json"
+	"errors"
 	"flag"
 	"fmt"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"regexp"
 	"strings"
 )
 
 func main() {
-	if err := run(); err != nil {
+	updatesFound, err := run()
+	if err != nil {
 		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+		os.Exit(1)
+	}
+	if updatesFound {
 		os.Exit(1)
 	}
 }
 
-func run() error {
+func run() (bool, error) {
 	includeIndirect := flag.Bool("i", false, "include indirect dependencies")
 	flag.Parse()
 
@@ -39,12 +45,12 @@ func run() error {
 
 	deps, updates, err := checkGoMod(context.Background(), gomodPath, *includeIndirect)
 	if err != nil {
-		return err
+		return false, err
 	}
 
 	if len(deps) == 0 {
 		fmt.Println("No pseudo-versioned dependencies found in go.mod.")
-		return nil
+		return false, nil
 	}
 
 	fmt.Println("Pseudo-versioned dependencies in go.mod:")
@@ -58,11 +64,11 @@ func run() error {
 		for _, u := range updates {
 			fmt.Printf("  %s: %s -> %s\n", u.module, u.current, u.latest)
 		}
-		os.Exit(1)
+		return true, nil
 	}
 
 	fmt.Println("No updates found for pseudo-versioned dependencies.")
-	return nil
+	return false, nil
 }
 
 // checkGoMod finds pseudo-versioned dependencies in the given go.mod file and
@@ -104,9 +110,9 @@ type dependency struct {
 var pseudoVersionRe = regexp.MustCompile(`[0-9]{14}-[a-f0-9]{12}(?: // indirect)?$`)
 
 func findPseudoVersionedDeps(gomodPath string, includeIndirect bool) ([]dependency, error) {
-	file, err := os.Open(gomodPath)
+	file, err := os.Open(filepath.Clean(gomodPath))
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("opening file: %w", err)
 	}
 	defer file.Close()
 
@@ -135,7 +141,7 @@ func findPseudoVersionedDeps(gomodPath string, includeIndirect bool) ([]dependen
 	}
 
 	if err := scanner.Err(); err != nil {
-		return nil, err
+		return nil, fmt.Errorf("scanning file: %w", err)
 	}
 
 	return deps, nil
@@ -189,7 +195,7 @@ func getLatestVersion(ctx context.Context, modulePath string) (string, error) {
 	}
 
 	if len(versions) == 0 {
-		return "", fmt.Errorf("neither main nor master branch found")
+		return "", errors.New("neither main nor master branch found")
 	}
 
 	// If we have both, return the one with the newer timestamp
@@ -202,8 +208,8 @@ func getLatestVersion(ctx context.Context, modulePath string) (string, error) {
 
 // moduleInfo represents the JSON output from 'go list -m -json'.
 type moduleInfo struct {
-	Path    string `json:"Path"`
-	Version string `json:"Version"`
+	Path    string `json:"Path"`    //nolint:tagliatelle // matches go list output
+	Version string `json:"Version"` //nolint:tagliatelle // matches go list output
 }
 
 // Note there are at least two cases to consider: If the repo has tagged
@@ -216,13 +222,15 @@ func queryModuleVersion(
 	modulePath,
 	branch string,
 ) (string, error) {
+	//nolint:gosec // modulePath and branch are from go.mod, intentional
 	cmd := exec.CommandContext(ctx, "go", "list", "-m", "-json", modulePath+"@"+branch)
 	output, err := cmd.Output()
 	if err != nil {
-		if exitErr, ok := err.(*exec.ExitError); ok {
-			return "", fmt.Errorf("%s", strings.TrimSpace(string(exitErr.Stderr)))
+		var exitErr *exec.ExitError
+		if errors.As(err, &exitErr) {
+			return "", errors.New(strings.TrimSpace(string(exitErr.Stderr)))
 		}
-		return "", err
+		return "", fmt.Errorf("running go list: %w", err)
 	}
 
 	var info moduleInfo
