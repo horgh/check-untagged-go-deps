@@ -24,7 +24,15 @@ import (
 )
 
 func main() {
-	updatesFound, err := run()
+	includeIndirect := flag.Bool("i", false, "include indirect dependencies")
+	flag.Parse()
+
+	gomodPath := "go.mod"
+	if flag.NArg() > 0 {
+		gomodPath = flag.Arg(0)
+	}
+
+	updatesFound, err := run(gomodPath, *includeIndirect)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
 		os.Exit(1)
@@ -34,16 +42,8 @@ func main() {
 	}
 }
 
-func run() (bool, error) {
-	includeIndirect := flag.Bool("i", false, "include indirect dependencies")
-	flag.Parse()
-
-	gomodPath := "go.mod"
-	if flag.NArg() > 0 {
-		gomodPath = flag.Arg(0)
-	}
-
-	deps, updates, err := checkGoMod(context.Background(), gomodPath, *includeIndirect)
+func run(gomodPath string, includeIndirect bool) (bool, error) {
+	deps, updates, err := checkGoMod(context.Background(), gomodPath, includeIndirect)
 	if err != nil {
 		return false, err
 	}
