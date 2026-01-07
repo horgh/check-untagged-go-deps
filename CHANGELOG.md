@@ -1,6 +1,6 @@
 # Changelog
 
-## 1.1.0 (Unreleased)
+## 1.1.0 (2026-01-06)
 
 * Add `-i` flag to include indirect dependencies (those marked with
   `// indirect` in go.mod).
