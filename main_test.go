@@ -179,7 +179,7 @@ func TestPseudoVersionRe(t *testing.T) {
 		{
 			name:    "go.mod line with indirect dependency",
 			input:   "	github.com/example/module v0.0.0-20231129151722-fdeea329fbba // indirect",
-			matches: true, // regex matches, but findPseudoVersionedDeps filters these out by default
+			matches: false, // regex no longer matches lines; modfile gives us clean version strings
 		},
 	}
 

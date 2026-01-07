@@ -4,6 +4,8 @@
 
 * Add `-i` flag to include indirect dependencies (those marked with
   `// indirect` in go.mod).
+* Use `golang.org/x/mod/modfile` to parse go.mod instead of manual
+  line-by-line parsing.
 
 ## 1.0.1 (2025-12-31)
 

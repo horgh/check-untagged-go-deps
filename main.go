@@ -10,7 +10,6 @@
 package main
 
 import (
-	"bufio"
 	"context"
 	"encoding/json"
 	"errors"
@@ -21,6 +20,8 @@ import (
 	"path/filepath"
 	"regexp"
 	"strings"
+
+	"golang.org/x/mod/modfile"
 )
 
 func main() {
@@ -105,43 +106,31 @@ type dependency struct {
 // commit hash, e.g.:
 //   - v0.0.0-20231129151722-fdeea329fbba (no base tag)
 //   - v1.1.1-0.20251215205057-2f3252140e00 (based on existing tag)
-//
-// It also matches lines ending with "// indirect".
-var pseudoVersionRe = regexp.MustCompile(`[0-9]{14}-[a-f0-9]{12}(?: // indirect)?$`)
+var pseudoVersionRe = regexp.MustCompile(`[0-9]{14}-[a-f0-9]{12}$`)
 
 func findPseudoVersionedDeps(gomodPath string, includeIndirect bool) ([]dependency, error) {
-	file, err := os.Open(filepath.Clean(gomodPath))
+	data, err := os.ReadFile(filepath.Clean(gomodPath))
 	if err != nil {
-		return nil, fmt.Errorf("opening file: %w", err)
+		return nil, fmt.Errorf("reading file: %w", err)
 	}
-	defer file.Close()
+
+	f, err := modfile.Parse(gomodPath, data, nil)
+	if err != nil {
+		return nil, fmt.Errorf("parsing go.mod: %w", err)
+	}
 
 	var deps []dependency
-	scanner := bufio.NewScanner(file)
-	for scanner.Scan() {
-		line := strings.TrimSpace(scanner.Text())
-		if !pseudoVersionRe.MatchString(line) {
+	for _, req := range f.Require {
+		if !pseudoVersionRe.MatchString(req.Mod.Version) {
 			continue
 		}
-
-		isIndirect := strings.HasSuffix(line, "// indirect")
-		if isIndirect && !includeIndirect {
+		if req.Indirect && !includeIndirect {
 			continue
 		}
-
-		fields := strings.Fields(line)
-		if len(fields) < 2 {
-			continue
-		}
-
 		deps = append(deps, dependency{
-			module:  fields[0],
-			version: fields[1],
+			module:  req.Mod.Path,
+			version: req.Mod.Version,
 		})
-	}
-
-	if err := scanner.Err(); err != nil {
-		return nil, fmt.Errorf("scanning file: %w", err)
 	}
 
 	return deps, nil
