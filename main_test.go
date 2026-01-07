@@ -5,6 +5,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"golang.org/x/mod/module"
 )
 
 func TestCheckGoMod(t *testing.T) {
@@ -56,7 +58,7 @@ require (
 		}
 
 		// Latest should also be a pseudo-version
-		if !pseudoVersionRe.MatchString(u.latest) {
+		if !module.IsPseudoVersion(u.latest) {
 			t.Errorf("expected latest to be pseudo-version, got %q", u.latest)
 		}
 	}
@@ -145,7 +147,7 @@ require (
 	}
 }
 
-func TestPseudoVersionRe(t *testing.T) {
+func TestIsPseudoVersion(t *testing.T) {
 	tests := []struct {
 		name    string
 		input   string
@@ -171,23 +173,13 @@ func TestPseudoVersionRe(t *testing.T) {
 			input:   "v1.2.3-beta.1",
 			matches: false,
 		},
-		{
-			name:    "go.mod line with pseudo-version",
-			input:   "	github.com/maxmind/mmdbwriter v1.1.1-0.20251215205057-2f3252140e00",
-			matches: true,
-		},
-		{
-			name:    "go.mod line with indirect dependency",
-			input:   "	github.com/example/module v0.0.0-20231129151722-fdeea329fbba // indirect",
-			matches: false, // regex no longer matches lines; modfile gives us clean version strings
-		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got := pseudoVersionRe.MatchString(tt.input)
+			got := module.IsPseudoVersion(tt.input)
 			if got != tt.matches {
-				t.Errorf("pseudoVersionRe.MatchString(%q) = %v, want %v", tt.input, got, tt.matches)
+				t.Errorf("module.IsPseudoVersion(%q) = %v, want %v", tt.input, got, tt.matches)
 			}
 		})
 	}
@@ -221,7 +213,7 @@ func TestGetLatestVersion(t *testing.T) {
 				t.Fatalf("getLatestVersion: %v", err)
 			}
 
-			if !pseudoVersionRe.MatchString(version) {
+			if !module.IsPseudoVersion(version) {
 				t.Errorf("expected pseudo-version, got %q", version)
 			}
 		})
@@ -280,7 +272,7 @@ func TestQueryModuleVersion(t *testing.T) {
 				t.Fatalf("queryModuleVersion: %v", err)
 			}
 
-			if tt.wantPseudo && !pseudoVersionRe.MatchString(version) {
+			if tt.wantPseudo && !module.IsPseudoVersion(version) {
 				t.Errorf("expected pseudo-version, got %q", version)
 			}
 		})
@@ -342,50 +334,6 @@ func TestNewerVersion(t *testing.T) {
 			}
 			if got != tt.want {
 				t.Errorf("newerVersion(%q, %q) = %q, want %q", tt.a, tt.b, got, tt.want)
-			}
-		})
-	}
-}
-
-func TestExtractTimestamp(t *testing.T) {
-	tests := []struct {
-		name    string
-		version string
-		want    string
-		wantErr bool
-	}{
-		{
-			name:    "pseudo-version without base tag",
-			version: "v0.0.0-20231129151722-fdeea329fbba",
-			want:    "20231129151722",
-		},
-		{
-			name:    "pseudo-version with base tag",
-			version: "v1.1.1-0.20251215205057-2f3252140e00",
-			want:    "20251215205057",
-		},
-		{
-			name:    "tagged version returns error",
-			version: "v1.2.3",
-			wantErr: true,
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			got, err := extractTimestamp(tt.version)
-			if tt.wantErr {
-				if err == nil {
-					t.Errorf("extractTimestamp(%q) expected error, got nil", tt.version)
-				}
-				return
-			}
-			if err != nil {
-				t.Errorf("extractTimestamp(%q) unexpected error: %v", tt.version, err)
-				return
-			}
-			if got != tt.want {
-				t.Errorf("extractTimestamp(%q) = %q, want %q", tt.version, got, tt.want)
 			}
 		})
 	}

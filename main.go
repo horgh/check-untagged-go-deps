@@ -18,10 +18,10 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
-	"regexp"
 	"strings"
 
 	"golang.org/x/mod/modfile"
+	"golang.org/x/mod/module"
 )
 
 func main() {
@@ -102,12 +102,6 @@ type dependency struct {
 	version string
 }
 
-// pseudoVersionRe matches Go pseudo-versions which end with a timestamp and
-// commit hash, e.g.:
-//   - v0.0.0-20231129151722-fdeea329fbba (no base tag)
-//   - v1.1.1-0.20251215205057-2f3252140e00 (based on existing tag)
-var pseudoVersionRe = regexp.MustCompile(`[0-9]{14}-[a-f0-9]{12}$`)
-
 func findPseudoVersionedDeps(gomodPath string, includeIndirect bool) ([]dependency, error) {
 	data, err := os.ReadFile(filepath.Clean(gomodPath))
 	if err != nil {
@@ -121,7 +115,7 @@ func findPseudoVersionedDeps(gomodPath string, includeIndirect bool) ([]dependen
 
 	var deps []dependency
 	for _, req := range f.Require {
-		if !pseudoVersionRe.MatchString(req.Mod.Version) {
+		if !module.IsPseudoVersion(req.Mod.Version) {
 			continue
 		}
 		if req.Indirect && !includeIndirect {
@@ -231,29 +225,18 @@ func queryModuleVersion(
 }
 
 // newerVersion compares two pseudo-versions and returns the one with the more
-// recent timestamp. Pseudo-versions contain a timestamp in YYYYMMDDHHMMSS format.
+// recent timestamp.
 func newerVersion(a, b string) (string, error) {
-	tsA, err := extractTimestamp(a)
+	tsA, err := module.PseudoVersionTime(a)
 	if err != nil {
-		return "", err
+		return "", fmt.Errorf("parsing version %q: %w", a, err)
 	}
-	tsB, err := extractTimestamp(b)
+	tsB, err := module.PseudoVersionTime(b)
 	if err != nil {
-		return "", err
+		return "", fmt.Errorf("parsing version %q: %w", b, err)
 	}
-	if tsA >= tsB {
+	if !tsA.Before(tsB) {
 		return a, nil
 	}
 	return b, nil
-}
-
-// timestampRe extracts the 14-digit timestamp from a pseudo-version.
-var timestampRe = regexp.MustCompile(`[0-9]{14}`)
-
-func extractTimestamp(version string) (string, error) {
-	match := timestampRe.FindString(version)
-	if match == "" {
-		return "", fmt.Errorf("no timestamp found in version %q", version)
-	}
-	return match, nil
 }

@@ -6,6 +6,8 @@
   `// indirect` in go.mod).
 * Use `golang.org/x/mod/modfile` to parse go.mod instead of manual
   line-by-line parsing.
+* Use `golang.org/x/mod/module` functions (`IsPseudoVersion`,
+  `PseudoVersionTime`) instead of custom regex patterns.
 
 ## 1.0.1 (2025-12-31)
 
