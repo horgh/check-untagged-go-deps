@@ -158,11 +158,16 @@ func checkForUpdates(ctx context.Context, deps []dependency) ([]update, error) {
 	return updates, nil
 }
 
+const (
+	branchMain   = "main"
+	branchMaster = "master"
+)
+
 // getLatestVersion queries the Go module proxy for the latest version on the
 // default branch. It queries both @main and @master and returns the one with
 // the more recent timestamp (in case both exist).
 func getLatestVersion(ctx context.Context, modulePath string) (string, error) {
-	branches := []string{"main", "master"}
+	branches := []string{branchMain, branchMaster}
 
 	var versions []string
 	for _, branch := range branches {
