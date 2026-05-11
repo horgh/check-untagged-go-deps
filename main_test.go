@@ -236,13 +236,13 @@ func TestQueryModuleVersion(t *testing.T) {
 		{
 			name:       "netipx has no tagged versions",
 			module:     "go4.org/netipx",
-			branch:     "main",
+			branch:     branchMain,
 			wantPseudo: true,
 		},
 		{
 			name:       "mmdbwriter has tagged versions but main returns pseudo",
 			module:     "github.com/maxmind/mmdbwriter",
-			branch:     "main",
+			branch:     branchMain,
 			wantPseudo: true,
 		},
 		{
