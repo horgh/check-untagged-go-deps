@@ -1,5 +1,5 @@
 # Build stage
-FROM golang:1.25-alpine AS builder
+FROM golang:1.27-alpine AS builder
 
 WORKDIR /app
 COPY go.mod ./
@@ -8,7 +8,7 @@ COPY . .
 RUN CGO_ENABLED=0 go build -o /check-untagged-go-deps .
 
 # Runtime stage
-FROM golang:1.25-alpine
+FROM golang:1.27-alpine
 
 # git is required for 'go list' to query module versions from repositories
 RUN apk add --no-cache git
