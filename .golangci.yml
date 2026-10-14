@@ -1,16 +1,15 @@
 version: "2"
 run:
+  go: "1.27"
+  tests: true
   # This is needed for precious, which may run multiple instances
   # in parallel
-  go: "1.24"
-  tests: true
   allow-parallel-runners: true
 linters:
   default: all
   disable:
-    # The canonical form is not always the most common form for some headers
-    # and there is a small chance that switching existing strings could
-    # break something.
+    # Reviewed 2026-04. 33 failures involving custom headers where canonical
+    # form loses readability (e.g., X-Mm-* headers).
     - canonicalheader
 
     - cyclop
@@ -25,18 +24,13 @@ linters:
     # easier to follow.
     - dupl
 
-    # This is very helpful for linting comments, but for strings in code it
-    # is pretty questionable, e.g., we have repeated strings in GeoIP build
-    # code for org names or in test cases. We should consider enabling if
-    # they allow limiting it to certain cases in the future.
-    - dupword
-
     # We don't follow its policy about not defining dynamic errors.
     - err113
 
     # We often don't initialize all of the struct fields. This is fine
     # generally
     - exhaustruct
+    - exhaustruct_v5
 
     # We tried this linter but most places we do forced type asserts are
     # pretty safe, e.g., an atomic.Value when everything is encapsulated
@@ -47,14 +41,26 @@ linters:
     - gochecknoglobals
     - gochecknoinits
 
-    # Similar to the exhaustive linter and I don't know that we use these
-    # sorts of sum types
+    # Reviewed 2026-04. No sum types found in codebase.
     - gochecksumtype
 
     - gocognit
 
+    # Reviewed 2026-06 during the golangci-lint 2.12 upgrade. 2.12 changed
+    # goconst to count repeated strings across all files in a package
+    # (previously effectively per-file), taking it from 0 findings to ~1700.
+    # The findings are dominated by .gohtml template names and short
+    # field/UI strings (e.g. "city", "email", "source") that add little
+    # value as constants, so the linter is not worth the noise.
+    - goconst
+
     # We don't want to forbid TODO, FIXME, etc.
     - godox
+
+    # Deprecated in golangci-lint 2.12 and replaced by gomodguard_v2, which we
+    # configure and enable below. `default: all` would otherwise re-enable the
+    # deprecated linter and emit a warning on every run.
+    - gomodguard
 
     # This only "caught" one thing, and it seemed like a reasonable use
     # of Han script. Generally, I don't think we want to prevent the use
@@ -82,15 +88,7 @@ linters:
     # and it would be a ton of work to move everything to that.
     - mnd
 
-    # Causes panics, e.g., when processing mmerrors
-    - musttag
-
     - nestif
-
-    # We do end up with a lot of debates on PRs about nil, nil returns. Such
-    # returns are often surprising, but there seem to be enough valid cases
-    # in our codebase that I am reluctant to enforce this.
-    - nilnil
 
     # Checks for a new line before a return. Although that often seems helpful,
     # there are many cases where it is not.
@@ -116,18 +114,36 @@ linters:
     - tagalign
     # We don't follow this. Sometimes we test internal code.
     - testpackage
-    # We probably _should_ be doing this!
+
+    # This would require using t.Helper() in 800+ test helpers. Although
+    # it may be helpful for some of them, I am not convinced it would be
+    # an improvement for all of them.
     - thelper
     - varnamelen
 
     # Although some fixes in this seem good (e.g., err cuddling), I was
     # not able to disable some of the less desirable whitespace changes.
     - wsl
-    # This is a new, rewritten version of wsl. It would be worth exploring
-    # the options.
+
+    # Reviewed 2026-04. Even with the most permissive settings
+    # (allow-first-in-block, allow-whole-block), 14,455 failures remain.
+    # The core rules (invalid-statement-above-assign, never-cuddle-decl,
+    # etc.) are not individually configurable. Re-evaluate if wsl_v5
+    # adds per-rule toggles.
     - wsl_v5
 
   settings:
+    dupword:
+      # These words legitimately repeat in SQL, test data, org names,
+      # error messages, and formatted table headers.
+      ignore:
+        - "ES"
+        - "geoname_id"
+        - "count"
+        - "regression"
+        - "o."
+        - "language:"
+
     # Please note that we only use depguard for blocking packages and
     # gomodguard for blocking modules.
     depguard:
@@ -147,6 +163,8 @@ linters:
             - google.golang.org/api/option
             - google.golang.org/api/transport/http
           deny:
+            - pkg: encoding/json$
+              desc: Use encoding/json/v2 instead.
             - pkg: github.com/likexian/gokit/assert
               desc: Use github.com/stretchr/testify/assert
             - pkg: golang.org/x/exp/maps
@@ -171,6 +189,27 @@ linters:
       # reason, there should be a nolint with an explanation.
       check-blank: true
       exclude-functions:
+        # There are many close functions where it is fine to not always check
+        # the error, e.g., when handling some other error or after a read-only
+        # operation.
+        - (*archive/zip.ReadCloser).Close
+        - (*compress/gzip.Reader).Close
+        - (*database/sql.Conn).Close
+        - (*database/sql.DB).Close
+        - (*database/sql.Rows).Close
+        - (*database/sql.Stmt).Close
+        - (io.Closer).Close
+        - (io.ReadCloser).Close
+        - (net.Conn).Close
+        - (*os.File).Close
+        - (*cloud.google.com/go/bigquery.Client).Close
+        - (*cloud.google.com/go/compute.ImagesClient).Close
+        - (*cloud.google.com/go/pubsub.Server).Close
+        - (*cloud.google.com/go/secretmanager/apiv1.Client).Close
+        - (*cloud.google.com/go/storage.Reader).Close
+        - (*github.com/oschwald/maxminddb-golang/v2.Reader).Close
+        - golang.org/x/sys/unix.Close
+
         # If we are rolling back a transaction, we are often already in an error
         # state.
         - (*database/sql.Tx).Rollback
@@ -196,9 +235,14 @@ linters:
     exhaustive:
       default-signifies-exhaustive: true
 
+    fatcontext:
+      check-struct-pointers: true
+
     forbidigo:
       # Forbid the following identifiers
       forbid:
+        - pattern: ^panic$
+          msg: panic should not be used.
         - pattern: ^atomic.Value$
           pkg: ^sync/atomic$
           msg: Use atomic.Pointer instead.
@@ -224,10 +268,14 @@ linters:
           msg: Use ghe.NewClient instead.
         - pattern: ^bigquery.NewClient
           msg: you should use mmgcloud.NewBigQueryClient instead.
+        - pattern: ^calendar.NewService
+          msg: you should use mmgcloud.NewCalendarService instead.
         - pattern: ^drive.NewService
           msg: you should use mmgdrive.NewGDrive instead.
         - pattern: ^filepath.Walk$
           msg: you should use filepath.WalkDir instead as it doesn't call os.Lstat on every entry.
+        - pattern: ^math.Max$
+          msg: you should use the max built-in instead.
         - pattern: ^math.Min$
           msg: you should use the min built-in instead.
         - pattern: ^mux.Vars$
@@ -237,7 +285,11 @@ linters:
         - pattern: ^net.ParseIP
           msg: you should use netip.ParseAddr unless you really need a net.IP
         - pattern: ^pgtype.NewMap
-          msg: you should use mmdatabase.NewTypeMap instead
+          msg: use the connection's TypeMap(). A bare map lacks the custom enum, domain, and array types registered at connect.
+        - pattern: \.SQLScanner$
+          msg: scan into the destination directly; pgx's database/sql driver uses the connection type map
+        - pattern: ^secretmanager.New
+          msg: you should use gsm.NewClient instead. It disables the http-proxy for Secret Manager requests.
         - pattern: ^sheets.NewService
           msg: you should use mmgcloud.NewSheetsService instead.
         - pattern: ^storage.NewClient
@@ -300,101 +352,133 @@ linters:
         - whyNoLint
 
     gomoddirectives:
-      replace-allow-list:
-        # We want to use an old version due to race conditions in the latest
-        # release.
-        - github.com/fsnotify/fsnotify
-        # We want to use an old version due to a logging issue.
-        - github.com/snowflakedb/gosnowflake
       toolchain-forbidden: true
+      exclude-forbidden: true
+      ignore-forbidden: true
+      go-debug-forbidden: true
       go-version-pattern: \d\.\d+(\.0)?
 
-    # IMPORTANT: gomodguard blocks _modules_, not arbitrary packages. Be
+    # IMPORTANT: gomodguard_v2 blocks _modules_, not arbitrary packages. Be
     # sure to use the module path from the go.mod file for these.
     # See https://github.com/ryancurrah/gomodguard/issues/12
-    gomodguard:
+    #
+    # gomodguard was deprecated in golangci-lint 2.12 and replaced by
+    # gomodguard_v2, which uses a single flat blocked list (module blocks and
+    # version constraints are combined; a `version` constraint blocks only the
+    # matching versions).
+    gomodguard_v2:
       blocked:
-        modules:
-          - github.com/avct/uasurfer:
-              recommendations:
-                - github.com/xavivars/uasurfer
-              reason: The original avct module appears abandoned.
-          - github.com/BurntSushi/toml:
-              recommendations:
-                - github.com/pelletier/go-toml/v2
-              reason: This library panics frequently on invalid input.
-          - github.com/pelletier/go-toml:
-              recommendations:
-                - github.com/pelletier/go-toml/v2
-              reason: This is an outdated version.
-          - github.com/gofrs/uuid:
-              recommendations:
-                - github.com/google/uuid
-          - github.com/gofrs/uuid/v5:
-              recommendations:
-                - github.com/google/uuid
-          - github.com/satori/go.uuid:
-              recommendations:
-                - github.com/google/uuid
-          - github.com/google/uuid:
-              recommendations:
-                - github.com/google/uuid
-          - github.com/lib/pq:
-              recommendations:
-                - github.com/jackc/pgx
-              reason: This library is no longer actively maintained.
-          - github.com/neilotoole/errgroup:
-              recommendations:
-                - golang.org/x/sync/errgroup
-              reason: This library can lead to subtle deadlocks in certain use cases.
-          - github.com/pariz/gountries:
-              reason: This library's data is not actively maintained. Use GeoInfo data.
-            github.com/pkg/errors:
-              recommendations:
-                - errors
-              reason: pkg/errors is no longer maintained.
-          - github.com/RackSec/srslog:
-              recommendations:
-                - log/syslog
-              reason: This library's data is not actively maintained.
-          - github.com/ua-parser/uap-go:
-              recommendations:
-                - github.com/xavivars/uasurfer
-              reason: The performance of this library is absolutely abysmal.
-          - github.com/ugorji/go:
-              recommendations:
-                - encoding/json
-                - github.com/mailru/easyjson
-              reason: This library is poorly maintained. We should default to using encoding/json and use easyjson where performance really matters.
-          - github.com/zeebo/assert:
-              recommendations:
-                - github.com/stretchr/testify/assert
-              reason: Use github.com/stretchr/testify/assert
-          - gopkg.in/yaml.v2:
-              recommendations:
-                - github.com/goccy/go-yaml
-              reason: Not actively maintained.
-          - gopkg.in/yaml.v3:
-              recommendations:
-                - github.com/goccy/go-yaml
-              reason: Not actively maintained.
-          - gotest.tools/v3:
-              recommendations:
-                - github.com/stretchr/testify/assert
-              reason: Use github.com/stretchr/testify/assert
-          - inet.af/netaddr:
-              recommendations:
-                - net/netip
-                - go4.org/netipx
-              reason: inet.af/netaddr has been deprecated.
-        versions:
-          - github.com/jackc/pgconn:
-              reason: Use github.com/jackc/pgx/v5
-          - github.com/jackc/pgtype:
-              reason: Use github.com/jackc/pgx/v5
-          - github.com/jackc/pgx:
-              version: < 5.0.0
-              reason: Use github.com/jackc/pgx/v5
+        - module: github.com/mailru/easyjson
+          recommendations:
+            - encoding/json/v2
+          reason: New code should use the standard library rather than generated marshalers.
+        - module: github.com/xavivars/uasurfer
+          recommendations:
+            - github.com/LumenResearch/uasurfer
+          reason: The original uasurfer module appears active again.
+        - module: github.com/BurntSushi/toml
+          recommendations:
+            - github.com/pelletier/go-toml/v2
+          reason: This library panics frequently on invalid input.
+        - module: github.com/pelletier/go-toml
+          recommendations:
+            - github.com/pelletier/go-toml/v2
+          reason: This is an outdated version.
+        - module: github.com/gofrs/uuid
+          recommendations:
+            - uuid
+          reason: The standard library uuid package covers this.
+        - module: github.com/gofrs/uuid/v5
+          recommendations:
+            - uuid
+          reason: The standard library uuid package covers this.
+        - module: github.com/satori/go.uuid
+          recommendations:
+            - uuid
+          reason: The standard library uuid package covers this.
+        - module: github.com/google/uuid
+          recommendations:
+            - uuid
+          reason: The standard library uuid package covers this.
+        - module: github.com/vgarvardt/pgx-google-uuid/v5
+          reason: pgx scans the standard library UUID without a codec.
+        - module: github.com/lib/pq
+          recommendations:
+            - github.com/jackc/pgx
+          reason: This library is no longer actively maintained.
+        - module: github.com/neilotoole/errgroup
+          recommendations:
+            - golang.org/x/sync/errgroup
+          reason: This library can lead to subtle deadlocks in certain use cases.
+        - module: github.com/pariz/gountries
+          reason: This library's data is not actively maintained. Use GeoInfo data.
+        - module: github.com/pkg/errors
+          recommendations:
+            - errors
+          reason: pkg/errors is no longer maintained.
+        - module: github.com/RackSec/srslog
+          recommendations:
+            - log/syslog
+          reason: This library's data is not actively maintained.
+        - module: github.com/ua-parser/uap-go
+          recommendations:
+            - github.com/xavivars/uasurfer
+          reason: The performance of this library is absolutely abysmal.
+        - module: github.com/ugorji/go
+          recommendations:
+            - encoding/json/v2
+          reason: This library is poorly maintained.
+        - module: github.com/zeebo/assert
+          recommendations:
+            - github.com/stretchr/testify/assert
+          reason: Use github.com/stretchr/testify/assert
+        - module: gopkg.in/yaml.v2
+          recommendations:
+            - github.com/goccy/go-yaml
+          reason: Not actively maintained.
+        - module: gopkg.in/yaml.v3
+          recommendations:
+            - github.com/goccy/go-yaml
+          reason: Not actively maintained.
+        - module: gotest.tools/v3
+          recommendations:
+            - github.com/stretchr/testify/assert
+          reason: Use github.com/stretchr/testify/assert
+        - module: inet.af/netaddr
+          recommendations:
+            - net/netip
+            - go4.org/netipx
+          reason: inet.af/netaddr has been deprecated.
+        - module: github.com/jackc/pgconn
+          reason: Use github.com/jackc/pgx/v5
+        - module: github.com/jackc/pgtype
+          reason: Use github.com/jackc/pgx/v5
+        - module: github.com/jackc/pgx
+          version: < 5.0.0
+          reason: Use github.com/jackc/pgx/v5
+        # backoff publishes each major version under its own module path, so
+        # blocking an old release means blocking its path. A new major version
+        # needs an entry here for the version it replaces.
+        - module: github.com/cenkalti/backoff
+          recommendations:
+            - github.com/cenkalti/backoff/v7
+          reason: This is an outdated version.
+        - module: github.com/cenkalti/backoff/v3
+          recommendations:
+            - github.com/cenkalti/backoff/v7
+          reason: This is an outdated version.
+        - module: github.com/cenkalti/backoff/v4
+          recommendations:
+            - github.com/cenkalti/backoff/v7
+          reason: This is an outdated version.
+        - module: github.com/cenkalti/backoff/v5
+          recommendations:
+            - github.com/cenkalti/backoff/v7
+          reason: This is an outdated version.
+        - module: github.com/cenkalti/backoff/v6
+          recommendations:
+            - github.com/cenkalti/backoff/v7
+          reason: This is an outdated version.
 
     gosec:
       excludes:
@@ -407,8 +491,9 @@ linters:
         # Prohibits defer (*os.File).Close, which we allow when reading from file.
         - G307
 
-        # no longer relevant with 1.22
-        - G601
+        # G701: SQL injection via taint analysis. Previously disabled due to
+        # false positives and instability. Re-evaluated 2026-04 with
+        # golangci-lint v2.11.4: zero false positives, stable across runs.
 
     govet:
       disable:
@@ -420,6 +505,10 @@ linters:
       settings:
         shadow:
           strict: true
+
+    iface:
+      enable:
+        - identical
 
     loggercheck:
       # although it seems like this should remove the need for our custom
@@ -444,12 +533,54 @@ linters:
         - typo: unmarshalls
           correction: unmarshals
 
+    musttag:
+      functions:
+        - name: github.com/mailru/easyjson.Marshal
+          tag: json
+          arg-pos: 0
+        - name: github.com/mailru/easyjson.Unmarshal
+          tag: json
+          arg-pos: 1
+        - name: github.com/mailru/easyjson.UnmarshalFromReader
+          tag: json
+          arg-pos: 1
+        - name: github.com/goccy/go-yaml.Marshal
+          tag: yaml
+          arg-pos: 0
+        - name: github.com/goccy/go-yaml.Unmarshal
+          tag: yaml
+          arg-pos: 1
+        - name: (*github.com/goccy/go-yaml.Encoder).Encode
+          tag: yaml
+          arg-pos: 0
+        - name: (*github.com/goccy/go-yaml.Decoder).Decode
+          tag: yaml
+          arg-pos: 0
+        - name: github.com/pelletier/go-toml/v2.Marshal
+          tag: toml
+          arg-pos: 0
+        - name: github.com/pelletier/go-toml/v2.Unmarshal
+          tag: toml
+          arg-pos: 1
+        - name: (*github.com/pelletier/go-toml/v2.Decoder).Decode
+          tag: toml
+          arg-pos: 0
+
+    # nilnil: detect-opposite was evaluated 2026-04 but rejected — too
+    # many legitimate `return value, err` patterns in the codebase.
+
     nolintlint:
       require-explanation: true
       require-specific: true
       allow-no-explanation:
         - misspell
       allow-unused: false
+
+    recvcheck:
+      # A value receiver on MarshalJSON is deliberate: it makes both the value
+      # and the pointer marshal through the custom marshaler.
+      exclusions:
+        - "*.MarshalJSON"
 
     revive:
       severity: warning
@@ -556,17 +687,12 @@ linters:
         - name: unused-receiver
           disabled: true
 
-        # This rule seems generally good, but it is unstable. If there is a
-        # package that violates it, you cannot just add a nolint to the file
-        # that it first complains about. You need to add nolints to _every_
-        # file in that package or otherwise it will randomly faily. This in
-        # turn causes issues for nolintlint as that will randomly think all
-        # but one of those nolints are unnecessary. More discussion on Slack:
-        # https://maxmind.slack.com/archives/C07ER81BQ4T/p1751312286948379
-        #
-        # TODO: reenable if this is fixed.
+        # Previously disabled due to instability: package-level rule would
+        # flag random files across runs, causing nolintlint false positives.
+        # Re-evaluated 2026-04 with golangci-lint v2.11.4: zero issues, stable.
+        # See: https://maxmind.slack.com/archives/C07ER81BQ4T/p1751312286948379
         - name: var-naming
-          disabled: true
+          disabled: false
 
     sloglint:
       # Enforce not mixing key-value pairs and attributes.
@@ -578,13 +704,14 @@ linters:
       # Enforce a snake case for keys.
       key-naming-case: snake
 
-      # Make sure we don't use reserved keys.
+      # Make sure we don't use reserved keys. Keys are alphabetical within
+      # each group.
       forbidden-keys:
         # These are included by our handler.
-        - time
         - level
         - logged_from
         - message
+        - time
 
         # We don't use these two, but they are slog defaults. It would
         # be better to avoid using them to reduce confusion and to make
@@ -600,7 +727,7 @@ linters:
         #
         # This is disabled as it interacts poorly with golangci-lint's caching.
         # I believe https://github.com/golangci/golangci-lint-action/issues/420
-        # is the same underlying issue.
+        # is the same underlying issue. Still needed as of golangci-lint v2.11.4.
         - -SA1019
 
         # SA5008: unknown JSON option "intern" - easyjson specific option.
@@ -628,7 +755,16 @@ linters:
       time-layout: true
 
     usetesting:
+      # We explicitly enable all of these as golangci-lint
+      # did not seem to be following the documented default
+      # in some cases.
+      os-create-temp: true
+      os-mkdir-temp: true
+      os-setenv: true
       os-temp-dir: true
+      os-chdir: true
+      context-background: true
+      context-todo: true
 
     wrapcheck:
       ignore-sigs:
@@ -640,7 +776,6 @@ linters:
         - .WithStack(
         - .Wrap(
         - .Wrapf(
-        - v5.Retry[T any](
 
   exclusions:
     generated: lax
@@ -655,13 +790,11 @@ linters:
           - bodyclose
         path: _test.go
 
-      # There are many cases where we want to just close resources and ignore the
-      # error (e.g., for defer f.Close on a read). errcheck removed its built-in
-      # wildcard ignore. I tried listing all of the cases, but it was too many
-      # and some were very specific.
+      # panic() is allowed in test files
       - linters:
-          - errcheck
-        source: \.Close
+          - forbidigo
+        text: panic should not be used
+        path: _test.go
 
       # This refers to a minFraud field, not the MaxMind Account ID
       - linters:
@@ -681,7 +814,7 @@ linters:
         source: // *no-ruleguard
 
       # The contextcheck linter also uses "nolint" in a slightly different way,
-      # leading to falso positives from nolintlint.
+      # leading to false positives from nolintlint.
       - linters:
           - nolintlint
         source: //nolint:contextcheck //.*
@@ -710,7 +843,23 @@ linters:
 
       - linters:
           - wrapcheck
-        text: github.com/maxmind/mmdbconvert
+        text: github.com/horgh/check-untagged-go-deps
+
+      # errors.AsType[T] returns (T, bool) where T is an error type. When only
+      # the bool is needed for type-checking, discarding T with _ is intentional.
+      # errcheck's exclude-functions does not support generic functions, so we
+      # exclude by source pattern instead.
+      - linters:
+          - errcheck
+        source: "errors\\.AsType\\["
+
+      # G124 (cookie security attributes) and G710 (open redirect) are new
+      # gosec rules in 2.12. They do not apply to test code, where cookies
+      # and redirects are constructed without production security attributes.
+      - linters:
+          - gosec
+        text: "G124|G710"
+        path: _test.go
 
     paths:
       - _easyjson\.go$
@@ -730,15 +879,20 @@ formatters:
       sections:
         - standard
         - default
-        - prefix(github.com/maxmind/mmdbconvert)
+        - prefix(github.com/horgh/check-untagged-go-deps)
 
     gofumpt:
-      module-path: github.com/maxmind/mmdbconvert
-      extra-rules: true
+      module-path: github.com/horgh/check-untagged-go-deps
+      # extra-rules is deprecated. Name each rule so that a rule added to a
+      # later gofumpt does not turn on silently.
+      extra:
+        group-params: true
+        clothe-returns: true
+        balance-calls: true
 
     goimports:
       local-prefixes:
-        - github.com/maxmind/mmdbconvert
+        - github.com/horgh/check-untagged-go-deps
 
     golines:
       shorten-comments: true
