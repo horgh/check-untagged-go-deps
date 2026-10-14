@@ -214,8 +214,7 @@ func queryModuleVersion(
 	cmd := exec.CommandContext(ctx, "go", "list", "-m", "-json", modulePath+"@"+branch)
 	output, err := cmd.Output()
 	if err != nil {
-		var exitErr *exec.ExitError
-		if errors.As(err, &exitErr) {
+		if exitErr, ok := errors.AsType[*exec.ExitError](err); ok {
 			return "", errors.New(strings.TrimSpace(string(exitErr.Stderr)))
 		}
 		return "", fmt.Errorf("running go list: %w", err)
