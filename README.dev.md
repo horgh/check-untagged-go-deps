@@ -21,35 +21,40 @@ at least one week old.
 
 ## Releasing
 
-1. Update `CHANGELOG.md` with the changes for the new version. Change the
-   "Unreleased" header to include the version number and date.
+1. In a PR, add a section for the new version to `CHANGELOG.md`, with the
+   version number and date. Merge the PR.
 
-2. Commit the changelog update.
+2. Build and test the Docker image. CI does not build it, and users of `v1` get
+   the new image when the `v1` tag moves.
 
-3. Create an annotated git tag for the version:
+   ```bash
+   git checkout main && git pull
+   podman build -t check-untagged-go-deps:test .
+   podman run --rm -v /path/to/go/module:/github/workspace:Z \
+     check-untagged-go-deps:test
+   ```
+
+   Use a Go module that has a pseudo-versioned dependency. The command must list
+   the dependency and exit with code 1 when an update is available.
+
+3. Create an annotated tag for the version, and move the `v1` tag to the same
+   commit. Users reference `v1` to get the latest v1.x.x release.
 
    ```bash
    git tag -a v1.2.0 -m v1.2.0
-   ```
-
-4. Update the `v1` tag to point to the new release (this allows users to
-   reference `v1` in their workflows to get the latest v1.x.x release):
-
-   ```bash
    git tag -f v1
    ```
 
-5. Push the commits and tags:
+4. Push only these two tags:
 
    ```bash
-   git push && git push --tags --force
+   git push origin v1.2.0
+   git push --force origin v1
    ```
 
-6. Create a GitHub release from the tag:
-   - Go to the repository on GitHub
-   - Click "Releases" in the right sidebar
-   - Click "Draft a new release"
-   - Select the new version tag (e.g., `v1.2.0`) from the dropdown
-   - Set the release title to the version (e.g., `v1.2.0`)
-   - Paste the relevant changes from `CHANGELOG.md` into the description
-   - Click "Publish release"
+5. Put the changelog section for the version in `notes.md`. Then create a GitHub
+   release from the tag:
+
+   ```bash
+   gh release create v1.2.0 --verify-tag --title v1.2.0 --notes-file notes.md
+   ```
