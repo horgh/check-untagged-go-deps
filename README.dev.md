@@ -1,5 +1,24 @@
 # Developer Documentation
 
+## Tools
+
+We use [mise](https://mise.jdx.dev/) to install the development tools.
+`mise.lock` sets their versions. To install them:
+
+```bash
+mise install
+```
+
+To lint and format the code:
+
+```bash
+precious lint --all
+precious tidy --all
+```
+
+To update the tools, run `mise lock --bump`. mise only selects versions that are
+at least one week old.
+
 ## Releasing
 
 1. Update `CHANGELOG.md` with the changes for the new version. Change the

@@ -22,7 +22,7 @@ on:
   push:
   pull_request:
   schedule:
-    - cron: '0 14 * * *' # Daily at 14:00 UTC
+    - cron: "0 14 * * *" # Daily at 14:00 UTC
   workflow_dispatch:
 
 permissions: {}
