@@ -1,0 +1,40 @@
+name: Docker
+
+on:
+  push:
+  pull_request:
+  schedule:
+    - cron: '5 12 * * SUN'
+
+permissions: {}
+
+jobs:
+  docker:
+    name: Docker image
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Build image
+        run: docker build -t check-untagged-go-deps:test .
+
+      # The test module has a pseudo-versioned dependency with newer commits,
+      # so the tool must report an update and exit with code 1.
+      - name: Run image on test module
+        run: |
+          set +e
+          output=$(docker run --rm \
+            -v "$PWD/testdata/docker:/github/workspace:ro" \
+            check-untagged-go-deps:test 2>&1)
+          status=$?
+          set -e
+          echo "$output"
+          if [ "$status" -ne 1 ]; then
+            echo "Expected exit code 1, got $status"
+            exit 1
+          fi
+          grep -q '^  go4.org/netipx: v0.0.0-20230125063823-8449b0a6169f -> ' \
+            <<< "$output"
