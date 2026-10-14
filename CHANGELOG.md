@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.2.0 (2026-10-14)
+
+- Update Go in the Docker image from 1.25 to 1.27. Before, the action failed for
+  modules that require Go 1.26 or later, because the image does not download a
+  newer Go toolchain.
+
 ## 1.1.0 (2026-01-06)
 
 - Add `-i` flag to include indirect dependencies (those marked with
