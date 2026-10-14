@@ -36,6 +36,13 @@ Skip integration tests (those requiring network access):
 go test -short ./...
 ```
 
+Lint and format (the tools come from mise):
+
+```bash
+precious lint --all
+precious tidy --all
+```
+
 ## Architecture
 
 This is a single-file Go CLI tool (`main.go`) with no external dependencies. The
